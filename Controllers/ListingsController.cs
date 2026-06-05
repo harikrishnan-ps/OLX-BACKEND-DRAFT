@@ -116,6 +116,43 @@ namespace olx_api.Controllers
             return CreatedAtAction(nameof(GetListing), new { id = listing.Id }, MapListing(created!));
         }
 
+        [HttpPut("{id:guid}")]
+        public async Task<ActionResult<ListingResponseDto>> UpdateListing(Guid id, UpdateListingDto dto)
+        {
+            var userId = GetCurrentUserId();
+            if (userId == null)
+                return Unauthorized();
+
+            var listing = await _listingRepo.GetByIdAsync(id);
+            if (listing == null)
+                return NotFound();
+
+            if (listing.UserId != userId.Value)
+                return Forbid();
+
+            if (!await _context.Cities.AnyAsync(c => c.Id == dto.CityId))
+                return BadRequest("Invalid city.");
+
+            if (!await _context.Categories.AnyAsync(c => c.Id == dto.CategoryId))
+                return BadRequest("Invalid category.");
+
+            listing.Title = dto.Title.Trim();
+            listing.Description = dto.Description.Trim();
+            listing.Price = dto.Price;
+            listing.IsNegotiable = dto.IsNegotiable;
+            listing.CityId = dto.CityId;
+            listing.CategoryId = dto.CategoryId;
+            listing.Condition = dto.Condition.Trim();
+            listing.SpecificationsJson = dto.SpecificationsJson;
+            listing.Status = dto.Status.Trim();
+
+            await _listingRepo.UpdateAsync(listing);
+            await _listingRepo.SaveChangesAsync();
+
+            var updated = await _listingRepo.GetByIdAsync(id);
+            return Ok(MapListing(updated!));
+        }
+
         private Guid? GetCurrentUserId()
         {
             var value =
