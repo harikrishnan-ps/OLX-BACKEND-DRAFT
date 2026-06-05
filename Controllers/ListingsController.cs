@@ -44,6 +44,16 @@ namespace olx_api.Controllers
             ));
         }
 
+        [HttpGet("{id:guid}")]
+        public async Task<ActionResult<ListingResponseDto>> GetListing(Guid id)
+        {
+            var listing = await _listingRepo.GetByIdAsync(id);
+            if (listing == null)
+                return NotFound();
+
+            return Ok(MapListing(listing));
+        }
+
         private static ListingResponseDto MapListing(Listing listing)
         {
             var city = listing.City;
