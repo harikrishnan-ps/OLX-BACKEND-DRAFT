@@ -1,4 +1,3 @@
-// Repositories/ListingRepository.cs
 using Microsoft.EntityFrameworkCore;
 using olx_api.Data;
 using olx_api.Models;
@@ -9,7 +8,10 @@ namespace olx_api.Repositories
     {
         private readonly ApplicationDbContext _context;
 
-        public ListingRepository(ApplicationDbContext context) => _context = context;
+        public ListingRepository(ApplicationDbContext context)
+        {
+            _context = context;
+        }
 
         public async Task<(IEnumerable<Listing> Items, int TotalCount)> GetAllAsync(
             string? search,
@@ -47,7 +49,9 @@ namespace olx_api.Repositories
                 query = query.Where(l => l.Title.Contains(search) || l.Description.Contains(search));
 
             if (categoryId.HasValue)
+            {
                 query = query.Where(l => l.CategoryId == categoryId.Value);
+            }
 
             if (cityId.HasValue)
                 query = query.Where(l => l.CityId == cityId.Value);
@@ -78,8 +82,9 @@ namespace olx_api.Repositories
             return (items, totalCount);
         }
 
-        public async Task<Listing?> GetByIdAsync(Guid id) =>
-            await _context.Listings
+        public async Task<Listing?> GetByIdAsync(Guid id)
+        {
+            return await _context.Listings
                 .Include(l => l.Images)
                 .Include(l => l.Category)
                 .Include(l => l.User)
@@ -116,9 +121,26 @@ namespace olx_api.Repositories
                 .ToListAsync();
         }
 
-        public async Task AddAsync(Listing listing) => await _context.Listings.AddAsync(listing);
-        public async Task UpdateAsync(Listing listing) => await Task.Run(() => _context.Listings.Update(listing));
-        public async Task DeleteAsync(Listing listing) => await Task.Run(() => _context.Listings.Remove(listing));
-        public async Task<bool> SaveChangesAsync() => await _context.SaveChangesAsync() > 0;
+        public async Task AddAsync(Listing listing)
+        {
+            await _context.Listings.AddAsync(listing);
+        }
+
+        public async Task UpdateAsync(Listing listing)
+        {
+            _context.Listings.Update(listing);
+            await Task.CompletedTask;
+        }
+
+        public async Task DeleteAsync(Listing listing)
+        {
+            _context.Listings.Remove(listing);
+            await Task.CompletedTask;
+        }
+
+        public async Task<bool> SaveChangesAsync()
+        {
+            return await _context.SaveChangesAsync() > 0;
+        }
     }
 }

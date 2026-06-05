@@ -28,6 +28,18 @@ namespace olx_api.Data
         {
             base.OnModelCreating(modelBuilder);
 
+            modelBuilder.Entity<User>()
+                .HasIndex(u => u.Email)
+                .IsUnique();
+
+            modelBuilder.Entity<User>()
+                .HasIndex(u => u.PhoneNumber)
+                .IsUnique();
+
+            modelBuilder.Entity<StaticPage>()
+                .HasIndex(p => p.Slug)
+                .IsUnique();
+
             // 1. Configure Composite Key for Favorites (Many-to-Many Bridge)
             modelBuilder.Entity<Favorite>()
                 .HasKey(f => new { f.UserId, f.ListingId });
