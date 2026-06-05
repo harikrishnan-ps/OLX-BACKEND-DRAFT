@@ -65,6 +65,11 @@ namespace olx_api.Controllers
                 return Unauthorized();
             }
 
+            if (dto.NewPassword != dto.ConfirmPassword)
+            {
+                return BadRequest("New Password and Confirm Password do not match.");
+            }
+
             if (!BCrypt.Net.BCrypt.Verify(dto.CurrentPassword, user.PasswordHash))
             {
                 return BadRequest("Current password is incorrect.");

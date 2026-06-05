@@ -18,7 +18,8 @@ namespace olx_api.Controllers
             "Pending",
             "Rejected",
             "Draft",
-            "Sold"
+            "Sold",
+            "Expired"
         };
 
         private readonly ApplicationDbContext _context;
@@ -33,11 +34,16 @@ namespace olx_api.Controllers
         {
             var stats = new AdminDashboardStatsDto(
                 await _context.Users.CountAsync(),
+                await _context.Users.CountAsync(u => !u.IsBlocked),
+                await _context.Users.CountAsync(u => u.IsBlocked),
+                await _context.Listings.CountAsync(),
                 await _context.Listings.CountAsync(l => l.Status == "Active"),
                 await _context.Listings.CountAsync(l => l.Status == "Pending"),
-                await _context.Reports.CountAsync(),
-                await _context.Users.CountAsync(u => u.IsBlocked),
-                await _context.Listings.CountAsync(l => l.IsFeatured));
+                await _context.Listings.CountAsync(l => l.Status == "Rejected"),
+                await _context.Listings.CountAsync(l => l.IsFeatured),
+                await _context.Categories.CountAsync(),
+                await _context.Reports.CountAsync()
+            );
 
             return Ok(stats);
         }
@@ -69,13 +75,61 @@ namespace olx_api.Controllers
             var status = dto.Status.Trim();
             if (!AllowedListingStatuses.Contains(status))
             {
-                return BadRequest("Status must be Active, Pending, Rejected, Draft, or Sold.");
+                return BadRequest("Status must be Active, Pending, Rejected, Draft, Sold, or Expired.");
             }
 
-            listing.Status = AllowedListingStatuses.First(s => string.Equals(s, status, StringComparison.OrdinalIgnoreCase));
+            var oldStatus = listing.Status;
+            var newStatus = AllowedListingStatuses.First(s => string.Equals(s, status, StringComparison.OrdinalIgnoreCase));
+            listing.Status = newStatus;
+
             if (dto.IsFeatured.HasValue)
             {
                 listing.IsFeatured = dto.IsFeatured.Value;
+            }
+
+            // Generate notification for status transitions
+            if (string.Equals(newStatus, "Active", StringComparison.OrdinalIgnoreCase) && 
+                !string.Equals(oldStatus, "Active", StringComparison.OrdinalIgnoreCase))
+            {
+                var notification = new InAppNotification
+                {
+                    UserId = listing.UserId,
+                    Message = $"Your advertisement '{listing.Title}' has been approved.",
+                    Type = "AdApproved",
+                    CreatedAt = DateTime.UtcNow
+                };
+                await _context.InAppNotifications.AddAsync(notification);
+            }
+            else if (string.Equals(newStatus, "Rejected", StringComparison.OrdinalIgnoreCase) && 
+                     !string.Equals(oldStatus, "Rejected", StringComparison.OrdinalIgnoreCase))
+            {
+                var notification = new InAppNotification
+                {
+                    UserId = listing.UserId,
+                    Message = $"Your advertisement '{listing.Title}' has been rejected by moderation.",
+                    Type = "AdRejected",
+                    CreatedAt = DateTime.UtcNow
+                };
+                await _context.InAppNotifications.AddAsync(notification);
+            }
+            else if (string.Equals(newStatus, "Sold", StringComparison.OrdinalIgnoreCase) && 
+                     !string.Equals(oldStatus, "Sold", StringComparison.OrdinalIgnoreCase))
+            {
+                var favorites = await _context.Favorites
+                    .Where(f => f.ListingId == id)
+                    .ToListAsync();
+
+                foreach (var fav in favorites)
+                {
+                    var notify = new InAppNotification
+                    {
+                        UserId = fav.UserId,
+                        Message = $"The item '{listing.Title}' in your wishlist has been marked as Sold.",
+                        Type = "ProductSold",
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    await _context.InAppNotifications.AddAsync(notify);
+                }
             }
 
             await _context.SaveChangesAsync();
@@ -238,6 +292,269 @@ namespace olx_api.Controllers
             }
 
             _context.Banners.Remove(banner);
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
+
+        [HttpGet("dashboard/charts")]
+        public async Task<ActionResult<object>> GetDashboardCharts()
+        {
+            var sixMonthsAgo = DateTime.UtcNow.AddMonths(-6);
+            var users = await _context.Users
+                .Where(u => u.CreatedAt >= sixMonthsAgo)
+                .ToListAsync();
+
+            var registrationTrend = users
+                .GroupBy(u => u.CreatedAt.ToString("yyyy-MM"))
+                .OrderBy(g => g.Key)
+                .Select(g => new { Month = g.Key, Count = g.Count() })
+                .ToList();
+
+            var listingsBreakdown = await _context.Listings
+                .GroupBy(l => l.Status)
+                .Select(g => new { Status = g.Key, Count = g.Count() })
+                .ToListAsync();
+
+            var categoryStats = await _context.Listings
+                .Include(l => l.Category)
+                .GroupBy(l => l.Category.Name)
+                .Select(g => new { Category = g.Key, Count = g.Count() })
+                .ToListAsync();
+
+            return Ok(new
+            {
+                RegistrationTrend = registrationTrend,
+                ListingsBreakdown = listingsBreakdown,
+                CategoryStats = categoryStats
+            });
+        }
+
+        [HttpGet("users")]
+        public async Task<ActionResult<object>> GetUsers([FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+        {
+            var query = _context.Users.AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var norm = search.Trim().ToLower();
+                query = query.Where(u => u.FullName.ToLower().Contains(norm) || u.Email.ToLower().Contains(norm) || u.PhoneNumber.Contains(norm));
+            }
+
+            var totalCount = await query.CountAsync();
+            var users = await query
+                .OrderByDescending(u => u.CreatedAt)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(u => new
+                {
+                    u.Id,
+                    u.FullName,
+                    u.Email,
+                    u.PhoneNumber,
+                    u.Role,
+                    u.IsVerified,
+                    u.IsBlocked,
+                    u.CreatedAt
+                })
+                .ToListAsync();
+
+            return Ok(new { Items = users, Page = page, PageSize = pageSize, TotalCount = totalCount });
+        }
+
+        [HttpGet("users/{id:guid}")]
+        public async Task<ActionResult<object>> GetUserDetails(Guid id)
+        {
+            var user = await _context.Users
+                .Include(u => u.Listings)
+                .FirstOrDefaultAsync(u => u.Id == id);
+
+            if (user == null)
+            {
+                return NotFound("User was not found.");
+            }
+
+            return Ok(new
+            {
+                user.Id,
+                user.FullName,
+                user.Email,
+                user.PhoneNumber,
+                user.Role,
+                user.IsVerified,
+                user.IsBlocked,
+                user.UserTier,
+                user.AdQuotaRemaining,
+                user.CreatedAt,
+                TotalListings = user.Listings.Count
+            });
+        }
+
+        [HttpDelete("users/{id:guid}")]
+        public async Task<IActionResult> DeleteUser(Guid id)
+        {
+            var user = await _context.Users.FindAsync(id);
+            if (user == null)
+            {
+                return NotFound("User was not found.");
+            }
+
+            var userListings = await _context.Listings.Where(l => l.UserId == id).ToListAsync();
+            foreach (var listing in userListings)
+            {
+                listing.Status = "Deleted";
+                listing.DeletedAt = DateTime.UtcNow;
+            }
+
+            _context.Users.Remove(user);
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
+
+        [HttpGet("listings")]
+        public async Task<ActionResult<object>> GetAdminListings([FromQuery] string? search, [FromQuery] string? status, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+        {
+            var query = _context.Listings
+                .Include(l => l.User)
+                .Include(l => l.Category)
+                .AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                query = query.Where(l => l.Title.Contains(search) || l.Description.Contains(search));
+            }
+
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                query = query.Where(l => l.Status == status);
+            }
+
+            var totalCount = await query.CountAsync();
+            var items = await query
+                .OrderByDescending(l => l.CreatedAt)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(l => new
+                {
+                    l.Id,
+                    l.Title,
+                    l.Price,
+                    l.Status,
+                    l.IsFeatured,
+                    l.CreatedAt,
+                    SellerName = l.User.FullName,
+                    CategoryName = l.Category.Name
+                })
+                .ToListAsync();
+
+            return Ok(new { Items = items, Page = page, PageSize = pageSize, TotalCount = totalCount });
+        }
+
+        [HttpDelete("listings/{id:guid}")]
+        public async Task<IActionResult> DeleteListingAdmin(Guid id)
+        {
+            var listing = await _context.Listings.FindAsync(id);
+            if (listing == null)
+            {
+                return NotFound("Listing was not found.");
+            }
+
+            listing.Status = "Deleted";
+            listing.DeletedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
+
+        [HttpGet("reports/{id:guid}")]
+        public async Task<ActionResult<object>> GetReportDetails(Guid id)
+        {
+            var report = await _context.Reports
+                .Include(r => r.Reporter)
+                .Include(r => r.ReportedListing)
+                    .ThenInclude(l => l.User)
+                .FirstOrDefaultAsync(r => r.Id == id);
+
+            if (report == null)
+            {
+                return NotFound("Report was not found.");
+            }
+
+            return Ok(new
+            {
+                report.Id,
+                report.Reason,
+                report.Status,
+                report.CreatedAt,
+                Reporter = new { report.Reporter.Id, report.Reporter.FullName, report.Reporter.Email },
+                Listing = new 
+                { 
+                    report.ReportedListing.Id, 
+                    report.ReportedListing.Title, 
+                    report.ReportedListing.Price, 
+                    report.ReportedListing.Status,
+                    Seller = new { report.ReportedListing.User.Id, report.ReportedListing.User.FullName, report.ReportedListing.User.Email }
+                }
+            });
+        }
+
+        [HttpPatch("reports/{id:guid}/resolve")]
+        public async Task<IActionResult> ResolveReport(Guid id, [FromQuery] string status = "Reviewed")
+        {
+            var report = await _context.Reports.FindAsync(id);
+            if (report == null)
+            {
+                return NotFound("Report was not found.");
+            }
+
+            if (status != "Reviewed" && status != "Dismissed")
+            {
+                return BadRequest("Status must be Reviewed or Dismissed.");
+            }
+
+            report.Status = status;
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
+
+        [HttpGet("reviews")]
+        public async Task<ActionResult<object>> GetReviewsAdmin([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+        {
+            var query = _context.Reviews
+                .Include(r => r.Reviewer)
+                .Include(r => r.TargetUser);
+
+            var totalCount = await query.CountAsync();
+            var reviews = await query
+                .OrderByDescending(r => r.CreatedAt)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(r => new
+                {
+                    r.Id,
+                    r.Rating,
+                    r.Comment,
+                    r.CreatedAt,
+                    ReviewerName = r.Reviewer.FullName,
+                    TargetUserName = r.TargetUser.FullName
+                })
+                .ToListAsync();
+
+            return Ok(new { Items = reviews, Page = page, PageSize = pageSize, TotalCount = totalCount });
+        }
+
+        [HttpDelete("reviews/{id:guid}")]
+        public async Task<IActionResult> DeleteReviewAdmin(Guid id)
+        {
+            var review = await _context.Reviews.FindAsync(id);
+            if (review == null)
+            {
+                return NotFound("Review was not found.");
+            }
+
+            _context.Reviews.Remove(review);
             await _context.SaveChangesAsync();
 
             return NoContent();

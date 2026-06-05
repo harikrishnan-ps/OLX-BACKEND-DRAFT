@@ -15,6 +15,7 @@ namespace olx_api.Repositories
             string? condition,
             string? status,
             string? specifications,
+            string? datePosted,
             int page,
             int pageSize
         );

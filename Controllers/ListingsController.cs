@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using olx_api.Data;
@@ -37,6 +38,7 @@ namespace olx_api.Controllers
                 query.Condition,
                 query.Status,
                 query.Specifications,
+                query.DatePosted,
                 page,
                 pageSize
             );
@@ -69,6 +71,57 @@ namespace olx_api.Controllers
             return Ok(listings.Select(MapListing));
         }
 
+        [Authorize]
+        [HttpGet("my")]
+        public async Task<ActionResult<IEnumerable<ListingResponseDto>>> GetMyListings()
+        {
+            var userId = GetCurrentUserId();
+            if (userId == null)
+                return Unauthorized();
+
+            var listings = await _context.Listings
+                .Include(l => l.Images)
+                .Include(l => l.Category)
+                .Include(l => l.User)
+                .Include(l => l.City)
+                    .ThenInclude(c => c.State)
+                        .ThenInclude(s => s.Country)
+                .Where(l => l.UserId == userId.Value && l.Status != "Deleted")
+                .OrderByDescending(l => l.CreatedAt)
+                .ToListAsync();
+
+            return Ok(listings.Select(MapListing));
+        }
+
+        [Authorize]
+        [HttpPatch("{id:guid}/renew")]
+        public async Task<ActionResult<ListingResponseDto>> RenewListing(Guid id)
+        {
+            var userId = GetCurrentUserId();
+            if (userId == null)
+                return Unauthorized();
+
+            var listing = await _listingRepo.GetByIdAsync(id);
+            if (listing == null)
+                return NotFound();
+
+            if (listing.UserId != userId.Value)
+                return Forbid();
+
+            listing.CreatedAt = DateTime.UtcNow;
+            listing.LastBoostedAt = DateTime.UtcNow;
+            if (listing.Status == "Expired" || listing.Status == "Sold")
+            {
+                listing.Status = "Active";
+            }
+
+            await _listingRepo.UpdateAsync(listing);
+            await _listingRepo.SaveChangesAsync();
+
+            var updated = await _listingRepo.GetByIdAsync(id);
+            return Ok(MapListing(updated!));
+        }
+
         [HttpPost]
         public async Task<ActionResult<ListingResponseDto>> CreateListing(CreateListingDto dto)
         {
@@ -80,7 +133,13 @@ namespace olx_api.Controllers
             if (user == null)
                 return Unauthorized();
 
-            if (!string.Equals(dto.Status, "Draft", StringComparison.OrdinalIgnoreCase) && user.AdQuotaRemaining <= 0)
+            var status = string.Equals(dto.Status, "Draft", StringComparison.OrdinalIgnoreCase) ? "Draft" : "Active";
+            if (status == "Active")
+            {
+                return BadRequest("New listings must be created as 'Draft'. You can publish (set to Active) after uploading at least 1 image.");
+            }
+
+            if (user.AdQuotaRemaining <= 0)
                 return BadRequest("Ad quota exhausted.");
 
             if (!await _context.Cities.AnyAsync(c => c.Id == dto.CityId))
@@ -99,17 +158,13 @@ namespace olx_api.Controllers
                 CategoryId = dto.CategoryId,
                 Condition = dto.Condition.Trim(),
                 SpecificationsJson = dto.SpecificationsJson,
-                Status = string.Equals(dto.Status, "Draft", StringComparison.OrdinalIgnoreCase) ? "Draft" : "Active",
+                Status = status,
                 UserId = user.Id,
                 CreatedAt = DateTime.UtcNow,
                 LastBoostedAt = DateTime.UtcNow
             };
 
             await _listingRepo.AddAsync(listing);
-
-            if (listing.Status == "Active")
-                user.AdQuotaRemaining--;
-
             await _listingRepo.SaveChangesAsync();
 
             var created = await _listingRepo.GetByIdAsync(listing.Id);
@@ -130,6 +185,26 @@ namespace olx_api.Controllers
             if (listing.UserId != userId.Value)
                 return Forbid();
 
+            if (string.Equals(dto.Status, "Active", StringComparison.OrdinalIgnoreCase) && (listing.Images == null || !listing.Images.Any()))
+            {
+                return BadRequest("A listing must have at least 1 image to be published (Active).");
+            }
+
+            var wasActive = string.Equals(listing.Status, "Active", StringComparison.OrdinalIgnoreCase);
+            var isNowActive = string.Equals(dto.Status, "Active", StringComparison.OrdinalIgnoreCase);
+
+            if (isNowActive && !wasActive)
+            {
+                var user = await _context.Users.FindAsync(userId.Value);
+                if (user == null)
+                    return Unauthorized();
+
+                if (user.AdQuotaRemaining <= 0)
+                    return BadRequest("Ad quota exhausted.");
+
+                user.AdQuotaRemaining--;
+            }
+
             if (!await _context.Cities.AnyAsync(c => c.Id == dto.CityId))
                 return BadRequest("Invalid city.");
 
@@ -144,9 +219,34 @@ namespace olx_api.Controllers
             listing.CategoryId = dto.CategoryId;
             listing.Condition = dto.Condition.Trim();
             listing.SpecificationsJson = dto.SpecificationsJson;
+            var oldStatus = listing.Status;
             listing.Status = dto.Status.Trim();
 
             await _listingRepo.UpdateAsync(listing);
+
+            // Notify wishlisted users
+            var wasSold = string.Equals(oldStatus, "Sold", StringComparison.OrdinalIgnoreCase);
+            var isNowSold = string.Equals(dto.Status, "Sold", StringComparison.OrdinalIgnoreCase);
+
+            var favoritedUsers = await _context.Favorites
+                .Where(f => f.ListingId == id)
+                .Select(f => f.UserId)
+                .ToListAsync();
+
+            foreach (var favUserId in favoritedUsers)
+            {
+                var notify = new InAppNotification
+                {
+                    UserId = favUserId,
+                    Message = isNowSold && !wasSold 
+                        ? $"The item '{listing.Title}' in your wishlist has been marked as Sold."
+                        : $"The wishlisted item '{listing.Title}' has been updated.",
+                    Type = isNowSold && !wasSold ? "ProductSold" : "WishlistProductUpdate",
+                    CreatedAt = DateTime.UtcNow
+                };
+                await _context.InAppNotifications.AddAsync(notify);
+            }
+
             await _listingRepo.SaveChangesAsync();
 
             var updated = await _listingRepo.GetByIdAsync(id);
@@ -198,6 +298,24 @@ namespace olx_api.Controllers
                 message.IsRead = true;
 
             await _listingRepo.UpdateAsync(listing);
+
+            // Notify wishlisted users
+            var favorites = await _context.Favorites
+                .Where(f => f.ListingId == id)
+                .ToListAsync();
+
+            foreach (var fav in favorites)
+            {
+                var notify = new InAppNotification
+                {
+                    UserId = fav.UserId,
+                    Message = $"The item '{listing.Title}' in your wishlist has been marked as Sold.",
+                    Type = "ProductSold",
+                    CreatedAt = DateTime.UtcNow
+                };
+                await _context.InAppNotifications.AddAsync(notify);
+            }
+
             await _listingRepo.SaveChangesAsync();
 
             var updated = await _listingRepo.GetByIdAsync(id);

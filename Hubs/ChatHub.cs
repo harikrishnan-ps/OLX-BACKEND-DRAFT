@@ -40,6 +40,17 @@ namespace olx_api.Hubs
             };
 
             await _context.Messages.AddAsync(message);
+
+            var senderName = Context.User?.Identity?.Name ?? "A user";
+            var notification = new InAppNotification
+            {
+                UserId = dto.ReceiverId,
+                Message = $"New message from {senderName}: {(dto.Content.Length > 30 ? dto.Content.Substring(0, 30) + "..." : dto.Content)}",
+                Type = "MessageReceived",
+                CreatedAt = DateTime.UtcNow
+            };
+            await _context.InAppNotifications.AddAsync(notification);
+
             await _context.SaveChangesAsync();
 
             var payload = new MessageResponseDto(

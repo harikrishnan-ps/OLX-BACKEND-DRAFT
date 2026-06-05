@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using olx_api.Data;
@@ -27,6 +28,11 @@ namespace olx_api.Controllers
         [HttpPost("register")]
         public async Task<IActionResult> Register(RegisterDto dto)
         {
+            if (dto.Password != dto.ConfirmPassword)
+            {
+                return BadRequest("Password and Confirm Password do not match.");
+            }
+
             var email = dto.Email.Trim().ToLowerInvariant();
             var phone = dto.PhoneNumber.Trim();
 
@@ -200,6 +206,30 @@ namespace olx_api.Controllers
             user.RefreshTokenExpiry = null;
 
             await _context.SaveChangesAsync();
+            return NoContent();
+        }
+
+        [Authorize]
+        [HttpPost("logout")]
+        public async Task<IActionResult> Logout()
+        {
+            var userIdValue = User.FindFirstValue(ClaimTypes.NameIdentifier) ??
+                              User.FindFirstValue("sub") ??
+                              User.FindFirstValue("nameid");
+
+            if (!Guid.TryParse(userIdValue, out var userId))
+            {
+                return Unauthorized();
+            }
+
+            var user = await _context.Users.FindAsync(userId);
+            if (user is not null)
+            {
+                user.RefreshToken = null;
+                user.RefreshTokenExpiry = null;
+                await _context.SaveChangesAsync();
+            }
+
             return NoContent();
         }
 

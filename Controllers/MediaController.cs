@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using olx_api.Data;
@@ -107,6 +108,43 @@ namespace olx_api.Controllers
 
             await _context.SaveChangesAsync();
             return Ok(new ListingImageDto(image.Id, image.ImageUrl, true));
+        }
+
+        [HttpPost("upload/profile")]
+        [RequestSizeLimit(10_000_000)]
+        [Authorize]
+        public async Task<ActionResult<object>> UploadProfilePicture([FromForm] IFormFile file)
+        {
+            var userId = GetCurrentUserId();
+            if (userId == null)
+                return Unauthorized();
+
+            var user = await _context.Users.FindAsync(userId.Value);
+            if (user == null)
+                return Unauthorized();
+
+            if (file == null || file.Length == 0)
+                return BadRequest("File is required.");
+
+            if (file.ContentType == null || !file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+                return BadRequest("Only image files are allowed.");
+
+            var uploadsRoot = Path.Combine(_environment.WebRootPath ?? Path.Combine(_environment.ContentRootPath, "wwwroot"), "uploads", "profiles");
+            Directory.CreateDirectory(uploadsRoot);
+
+            var extension = Path.GetExtension(file.FileName);
+            var fileName = $"{userId.Value}{extension}";
+            var filePath = Path.Combine(uploadsRoot, fileName);
+
+            await using (var stream = System.IO.File.Create(filePath))
+            {
+                await file.CopyToAsync(stream);
+            }
+
+            user.ProfilePictureUrl = $"/uploads/profiles/{fileName}";
+            await _context.SaveChangesAsync();
+
+            return Ok(new { profilePictureUrl = user.ProfilePictureUrl });
         }
 
         private Guid? GetCurrentUserId()

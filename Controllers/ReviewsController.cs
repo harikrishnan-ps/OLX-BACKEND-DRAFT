@@ -66,6 +66,37 @@ namespace olx_api.Controllers
             });
         }
 
+        [AllowAnonymous]
+        [HttpGet("seller/{sellerId:guid}")]
+        public async Task<ActionResult<object>> GetSellerReviews(Guid sellerId)
+        {
+            var reviews = await _context.Reviews
+                .Include(r => r.Reviewer)
+                .Where(r => r.TargetUserId == sellerId)
+                .OrderByDescending(r => r.CreatedAt)
+                .Select(r => new
+                {
+                    r.Id,
+                    r.Rating,
+                    r.Comment,
+                    r.CreatedAt,
+                    r.ReviewerId,
+                    ReviewerName = r.Reviewer.FullName,
+                    ReviewerProfilePicture = r.Reviewer.ProfilePictureUrl
+                })
+                .ToListAsync();
+
+            var averageRating = reviews.Any() ? Math.Round(reviews.Average(r => r.Rating), 1) : 0.0;
+
+            return Ok(new
+            {
+                SellerId = sellerId,
+                AverageRating = averageRating,
+                TotalReviews = reviews.Count,
+                Reviews = reviews
+            });
+        }
+
         private Guid? GetCurrentUserId()
         {
             var userIdValue = User.FindFirstValue(ClaimTypes.NameIdentifier);

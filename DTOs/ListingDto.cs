@@ -13,6 +13,7 @@ namespace olx_api.DTOs
         string? Condition,
         string? Status,
         string? Specifications,
+        string? DatePosted,
         int Page = 1,
         int PageSize = 20
     );

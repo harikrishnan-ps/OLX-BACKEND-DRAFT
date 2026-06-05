@@ -23,6 +23,7 @@ namespace olx_api.Repositories
             string? condition,
             string? status,
             string? specifications,
+            string? datePosted,
             int page,
             int pageSize
         )
@@ -70,6 +71,26 @@ namespace olx_api.Repositories
 
             if (!string.IsNullOrWhiteSpace(specifications))
                 query = query.Where(l => l.SpecificationsJson != null && l.SpecificationsJson.Contains(specifications));
+
+            if (!string.IsNullOrWhiteSpace(datePosted))
+            {
+                var lowerDate = datePosted.ToLowerInvariant();
+                if (lowerDate == "today")
+                {
+                    var today = DateTime.UtcNow.Date;
+                    query = query.Where(l => l.CreatedAt >= today);
+                }
+                else if (lowerDate == "last3days")
+                {
+                    var threeDaysAgo = DateTime.UtcNow.AddDays(-3);
+                    query = query.Where(l => l.CreatedAt >= threeDaysAgo);
+                }
+                else if (lowerDate == "lastweek")
+                {
+                    var oneWeekAgo = DateTime.UtcNow.AddDays(-7);
+                    query = query.Where(l => l.CreatedAt >= oneWeekAgo);
+                }
+            }
 
             var totalCount = await query.CountAsync();
             var items = await query

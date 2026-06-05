@@ -35,6 +35,20 @@ namespace olx_api.Controllers
                 return BadRequest("Report reason is required.");
             }
 
+            var allowedReasons = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "Spam",
+                "Duplicate Listing",
+                "Fake Product",
+                "Offensive Content",
+                "Scam"
+            };
+
+            if (!allowedReasons.Contains(reason))
+            {
+                return BadRequest("Invalid report reason. Allowed reasons are: Spam, Duplicate Listing, Fake Product, Offensive Content, Scam.");
+            }
+
             var listing = await _context.Listings.FirstOrDefaultAsync(l => l.Id == dto.ReportedListingId);
             if (listing is null)
             {
