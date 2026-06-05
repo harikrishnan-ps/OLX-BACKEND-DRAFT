@@ -29,5 +29,15 @@ namespace olx_api.Controllers
             var states = await _locationRepo.GetStatesByCountryAsync(id);
             return Ok(states.Select(s => new StateDto(s.Id, s.Name, s.CountryId)));
         }
+
+        [HttpGet("states/{id}/cities")]
+        public async Task<ActionResult<IEnumerable<CityDto>>> GetCitiesByState(int id)
+        {
+            if (!await _locationRepo.StateExistsAsync(id))
+                return NotFound();
+
+            var cities = await _locationRepo.GetCitiesByStateAsync(id);
+            return Ok(cities.Select(c => new CityDto(c.Id, c.Name, c.StateId)));
+        }
     }
 }
