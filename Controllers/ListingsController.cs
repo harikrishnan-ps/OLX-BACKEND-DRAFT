@@ -1,7 +1,10 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using olx_api.Data;
 using olx_api.DTOs;
 using olx_api.Models;
 using olx_api.Repositories;
+using System.Security.Claims;
 
 namespace olx_api.Controllers
 {
@@ -10,10 +13,12 @@ namespace olx_api.Controllers
     public class ListingsController : ControllerBase
     {
         private readonly IListingRepository _listingRepo;
+        private readonly ApplicationDbContext _context;
 
-        public ListingsController(IListingRepository listingRepo)
+        public ListingsController(IListingRepository listingRepo, ApplicationDbContext context)
         {
             _listingRepo = listingRepo;
+            _context = context;
         }
 
         [HttpGet]
@@ -62,6 +67,63 @@ namespace olx_api.Controllers
 
             var listings = await _listingRepo.GetSimilarAsync(id, Math.Clamp(limit, 1, 50));
             return Ok(listings.Select(MapListing));
+        }
+
+        [HttpPost]
+        public async Task<ActionResult<ListingResponseDto>> CreateListing(CreateListingDto dto)
+        {
+            var userId = GetCurrentUserId();
+            if (userId == null)
+                return Unauthorized();
+
+            var user = await _context.Users.FindAsync(userId.Value);
+            if (user == null)
+                return Unauthorized();
+
+            if (!string.Equals(dto.Status, "Draft", StringComparison.OrdinalIgnoreCase) && user.AdQuotaRemaining <= 0)
+                return BadRequest("Ad quota exhausted.");
+
+            if (!await _context.Cities.AnyAsync(c => c.Id == dto.CityId))
+                return BadRequest("Invalid city.");
+
+            if (!await _context.Categories.AnyAsync(c => c.Id == dto.CategoryId))
+                return BadRequest("Invalid category.");
+
+            var listing = new Listing
+            {
+                Title = dto.Title.Trim(),
+                Description = dto.Description.Trim(),
+                Price = dto.Price,
+                IsNegotiable = dto.IsNegotiable,
+                CityId = dto.CityId,
+                CategoryId = dto.CategoryId,
+                Condition = dto.Condition.Trim(),
+                SpecificationsJson = dto.SpecificationsJson,
+                Status = string.Equals(dto.Status, "Draft", StringComparison.OrdinalIgnoreCase) ? "Draft" : "Active",
+                UserId = user.Id,
+                CreatedAt = DateTime.UtcNow,
+                LastBoostedAt = DateTime.UtcNow
+            };
+
+            await _listingRepo.AddAsync(listing);
+
+            if (listing.Status == "Active")
+                user.AdQuotaRemaining--;
+
+            await _listingRepo.SaveChangesAsync();
+
+            var created = await _listingRepo.GetByIdAsync(listing.Id);
+            return CreatedAtAction(nameof(GetListing), new { id = listing.Id }, MapListing(created!));
+        }
+
+        private Guid? GetCurrentUserId()
+        {
+            var value =
+                User.FindFirstValue(ClaimTypes.NameIdentifier) ??
+                User.FindFirstValue("sub") ??
+                User.FindFirstValue("nameid");
+
+            return Guid.TryParse(value, out var userId) ? userId : null;
         }
 
         private static ListingResponseDto MapListing(Listing listing)
