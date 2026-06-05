@@ -153,6 +153,28 @@ namespace olx_api.Controllers
             return Ok(MapListing(updated!));
         }
 
+        [HttpDelete("{id:guid}")]
+        public async Task<IActionResult> DeleteListing(Guid id)
+        {
+            var userId = GetCurrentUserId();
+            if (userId == null)
+                return Unauthorized();
+
+            var listing = await _listingRepo.GetByIdAsync(id);
+            if (listing == null)
+                return NotFound();
+
+            if (listing.UserId != userId.Value)
+                return Forbid();
+
+            listing.Status = "Deleted";
+            listing.DeletedAt = DateTime.UtcNow;
+            await _listingRepo.UpdateAsync(listing);
+            await _listingRepo.SaveChangesAsync();
+
+            return NoContent();
+        }
+
         private Guid? GetCurrentUserId()
         {
             var value =
