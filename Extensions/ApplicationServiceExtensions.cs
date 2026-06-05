@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using olx_api.Repositories;
-// using olx_api.Services;
+using olx_api.Services;
 
 namespace olx_api.Extensions
 {
@@ -20,8 +20,8 @@ namespace olx_api.Extensions
             // LocationRepository implementation not found; remove or replace once available
             // services.AddScoped<ILocationRepository, LocationRepository>();
 
-            // Register Services (e.g., EmailService, TokenService)
-            // services.AddScoped<IEmailService, BrevoEmailService>();
+            services.AddScoped<ITokenService, TokenService>();
+            services.AddHttpClient<IEmailService, BrevoEmailService>();
 
             return services;
         }
@@ -35,7 +35,7 @@ namespace olx_api.Extensions
                     options.TokenValidationParameters = new TokenValidationParameters
                     {
                         ValidateIssuerSigningKey = true,
-                        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config["Jwt:Key"] ?? throw new InvalidOperationException("JWT Key missing"))),
+                        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(GetJwtKey(config))),
                         ValidateIssuer = false,
                         ValidateAudience = false
                     };
@@ -58,6 +58,19 @@ namespace olx_api.Extensions
 
             services.AddAuthorization();
             return services;
+        }
+
+        private static string GetJwtKey(IConfiguration config)
+        {
+            var key = Environment.GetEnvironmentVariable("JWT_SECRET_KEY")
+                ?? config["Jwt:Key"];
+
+            if (string.IsNullOrWhiteSpace(key) || key == "JWT_SECRET_KEY")
+            {
+                key = "dev-only-change-this-jwt-secret-key-32";
+            }
+
+            return key;
         }
     }
 }
