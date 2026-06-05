@@ -7,4 +7,6 @@ namespace olx_api.DTOs
         Guid Id, string Content, DateTime SentAt, bool IsRead, 
         Guid SenderId, string SenderName, Guid ReceiverId
     );
+
+    public record DeleteConversationDto(Guid OtherUserId, Guid? ListingId);
 }

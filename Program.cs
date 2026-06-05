@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using olx_api.Data;
 using olx_api.Extensions;
+using olx_api.Hubs;
 using olx_api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -20,6 +21,7 @@ builder.Services.AddControllers()
 // 2. Configure Swagger API Documentation Tools
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddSignalR();
 
 var connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION")
     ?? builder.Configuration.GetConnectionString("DefaultConnection");
@@ -79,7 +81,6 @@ app.UseAuthorization();  // Verifies what the caller is allowed to access
 
 app.MapControllers();
 
-// If implementing real-time chat hubs down the road:
-// app.MapHub<ChatHub>("/chathub");
+app.MapHub<ChatHub>("/chathub");
 
 app.Run();

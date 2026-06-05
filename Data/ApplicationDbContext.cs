@@ -22,6 +22,7 @@ namespace olx_api.Data
         public DbSet<Banner> Banners { get; set; }
         public DbSet<StaticPage> StaticPages { get; set; }
         public DbSet<InAppNotification> InAppNotifications { get; set; }
+        public DbSet<ConversationDeletion> ConversationDeletions { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

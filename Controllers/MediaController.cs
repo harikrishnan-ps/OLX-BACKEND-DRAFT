@@ -81,6 +81,34 @@ namespace olx_api.Controllers
             return Ok(created.Select(i => new ListingImageDto(i.Id, i.ImageUrl, i.IsPrimary)));
         }
 
+        [HttpPatch("{id:guid}/primary")]
+        public async Task<ActionResult<ListingImageDto>> SetPrimaryImage(Guid id)
+        {
+            var userId = GetCurrentUserId();
+            if (userId == null)
+                return Unauthorized();
+
+            var image = await _context.ListingImages
+                .Include(i => i.Listing)
+                .FirstOrDefaultAsync(i => i.Id == id && i.Listing.Status != "Deleted");
+
+            if (image == null)
+                return NotFound();
+
+            if (image.Listing.UserId != userId.Value)
+                return Forbid();
+
+            var listingImages = await _context.ListingImages
+                .Where(i => i.ListingId == image.ListingId)
+                .ToListAsync();
+
+            foreach (var listingImage in listingImages)
+                listingImage.IsPrimary = listingImage.Id == id;
+
+            await _context.SaveChangesAsync();
+            return Ok(new ListingImageDto(image.Id, image.ImageUrl, true));
+        }
+
         private Guid? GetCurrentUserId()
         {
             var value =
