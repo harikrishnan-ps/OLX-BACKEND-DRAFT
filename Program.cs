@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using olx_api.Data;
 using olx_api.Extensions;
+using olx_api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,17 +21,19 @@ builder.Services.AddControllers()
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+var connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION")
+    ?? builder.Configuration.GetConnectionString("DefaultConnection");
+
+if (string.IsNullOrWhiteSpace(connectionString) || connectionString == "DB_CONNECTION")
+{
+    throw new InvalidOperationException("Database connection string is missing. Set DB_CONNECTION in .env or configuration.");
+}
+
 // 3. Setup Database Connection (SQL Server)
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
 {
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
+    options.UseSqlServer(connectionString);
 });
-
-var connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION") 
-                       ?? builder.Configuration.GetConnectionString("DefaultConnection");
-
-var jwtKey = Environment.GetEnvironmentVariable("JWT_SECRET_KEY") 
-             ?? builder.Configuration["Jwt:Key"];
 
 // 4. Inject Modular Custom Configurations (JWT Setup, Repositories, etc.)
 builder.Services.AddApplicationServices(builder.Configuration);
@@ -41,7 +44,12 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("OlxCorsPolicy", policy =>
     {
-        policy.WithOrigins("http://localhost:3000", "http://localhost:19006") // Web and React Native ports
+        var origins = (Environment.GetEnvironmentVariable("CORS_ORIGINS")
+                       ?? builder.Configuration["Cors:Origins"]
+                       ?? "http://localhost:3000,http://localhost:19006")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        policy.WithOrigins(origins) // Web and React Native ports
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials(); // Required for SignalR real-time chats
@@ -50,6 +58,8 @@ builder.Services.AddCors(options =>
 
 // 6. Build the Application Pipeline
 var app = builder.Build();
+
+await DatabaseSeeder.ApplyMigrationsAndSeedAsync(app.Services);
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
