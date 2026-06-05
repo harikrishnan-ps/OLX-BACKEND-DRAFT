@@ -9,4 +9,6 @@ namespace olx_api.DTOs
     public record UserProfileDto(Guid Id, string FullName, string Email, string? PhoneNumber, string? ProfilePictureUrl, string Role, string UserTier, int AdQuotaRemaining, DateTime CreatedAt);
     public record UpdateProfileDto(string FullName, string PhoneNumber, string? ProfilePictureUrl);
     public record ChangePasswordDto(string CurrentPassword, string NewPassword);
+    public record VerifyOtpDto(string Email, string Otp);
+    public record ResendOtpDto(string Email);
 }

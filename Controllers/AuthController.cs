@@ -25,7 +25,7 @@ namespace olx_api.Controllers
         }
 
         [HttpPost("register")]
-        public async Task<ActionResult<AuthResponseDto>> Register(RegisterDto dto)
+        public async Task<IActionResult> Register(RegisterDto dto)
         {
             var email = dto.Email.Trim().ToLowerInvariant();
             var phone = dto.PhoneNumber.Trim();
@@ -40,21 +40,68 @@ namespace olx_api.Controllers
                 return Conflict("Mobile number is already registered.");
             }
 
+            var otp = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
+
             var user = new User
             {
                 FullName = dto.FullName.Trim(),
                 Email = email,
                 PhoneNumber = phone,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password)
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
+                IsVerified = false,
+                RegistrationOtp = otp,
+                RegistrationOtpExpiry = DateTime.UtcNow.AddMinutes(10)
             };
-
-            user.RefreshToken = _tokenService.CreateRefreshToken();
-            user.RefreshTokenExpiry = DateTime.UtcNow.AddDays(7);
 
             _context.Users.Add(user);
             await _context.SaveChangesAsync();
 
+            await _emailService.SendRegistrationOtpAsync(user.Email, user.FullName, otp);
+
+            return Ok(new { message = "Registration successful. Please check your email for the verification OTP." });
+        }
+
+        [HttpPost("verify-otp")]
+        public async Task<ActionResult<AuthResponseDto>> VerifyOtp(VerifyOtpDto dto)
+        {
+            var email = dto.Email.Trim().ToLowerInvariant();
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == email);
+
+            if (user is null ||
+                user.RegistrationOtp != dto.Otp ||
+                user.RegistrationOtpExpiry is null ||
+                user.RegistrationOtpExpiry < DateTime.UtcNow)
+            {
+                return BadRequest("Invalid or expired OTP.");
+            }
+
+            user.IsVerified = true;
+            user.RegistrationOtp = null;
+            user.RegistrationOtpExpiry = null;
+
+            user.RefreshToken = _tokenService.CreateRefreshToken();
+            user.RefreshTokenExpiry = DateTime.UtcNow.AddDays(7);
+            await _context.SaveChangesAsync();
+
             return Ok(CreateAuthResponse(user));
+        }
+
+        [HttpPost("resend-otp")]
+        public async Task<IActionResult> ResendOtp(ResendOtpDto dto)
+        {
+            var email = dto.Email.Trim().ToLowerInvariant();
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == email);
+
+            if (user is not null && !user.IsVerified)
+            {
+                var otp = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
+                user.RegistrationOtp = otp;
+                user.RegistrationOtpExpiry = DateTime.UtcNow.AddMinutes(10);
+                await _context.SaveChangesAsync();
+                await _emailService.SendRegistrationOtpAsync(user.Email, user.FullName, otp);
+            }
+
+            return Ok(new { message = "If the email exists and is unverified, a new OTP has been sent." });
         }
 
         [HttpPost("login")]
@@ -68,6 +115,12 @@ namespace olx_api.Controllers
             if (user is null || !BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
             {
                 return Unauthorized("Invalid login credentials.");
+            }
+
+            if (!user.IsVerified)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden,
+                    "Please verify your email first. Use /api/auth/resend-otp to get a new code.");
             }
 
             if (user.IsBlocked)
@@ -157,3 +210,4 @@ namespace olx_api.Controllers
         }
     }
 }
+

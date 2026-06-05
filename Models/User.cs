@@ -23,6 +23,10 @@ namespace olx_api.Models
 
         public string? ResetPasswordOtp { get; set; }
         public DateTime? OtpExpiry { get; set; }
+
+        // Registration OTP fields
+        public string? RegistrationOtp { get; set; }
+        public DateTime? RegistrationOtpExpiry { get; set; }
         public string? RefreshToken { get; set; }
         public DateTime? RefreshTokenExpiry { get; set; }
 
