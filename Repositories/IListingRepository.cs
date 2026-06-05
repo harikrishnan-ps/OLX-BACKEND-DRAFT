@@ -5,8 +5,21 @@ namespace olx_api.Repositories
 {
     public interface IListingRepository
     {
-        Task<IEnumerable<Listing>> GetAllAsync(string? search, int? categoryId, string? city, int page, int pageSize);
+        Task<(IEnumerable<Listing> Items, int TotalCount)> GetAllAsync(
+            string? search,
+            int? categoryId,
+            int? cityId,
+            int? stateId,
+            decimal? minPrice,
+            decimal? maxPrice,
+            string? condition,
+            string? status,
+            string? specifications,
+            int page,
+            int pageSize
+        );
         Task<Listing?> GetByIdAsync(Guid id);
+        Task<IEnumerable<Listing>> GetSimilarAsync(Guid id, int limit);
         Task AddAsync(Listing listing);
         Task UpdateAsync(Listing listing);
         Task DeleteAsync(Listing listing);

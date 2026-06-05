@@ -69,6 +69,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseStaticFiles();
 
 // 7. Core Middleware Routing Order (Crucial: CORS -> Auth -> Routing)
 app.UseCors("OlxCorsPolicy");

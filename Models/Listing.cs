@@ -9,6 +9,8 @@ namespace olx_api.Models
         public string Description { get; set; }
         public decimal Price { get; set; }
         public bool IsNegotiable { get; set; }
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public string? SpecificationsJson { get; set; }
         
         // UPDATED: Removed string State/City. Linked to relational DB City
         public int CityId { get; set; }
@@ -16,9 +18,10 @@ namespace olx_api.Models
 
         // NEW PROPERTIES BELOW
         public string Condition { get; set; } // "New", "Used"
-        public string Status { get; set; } = "Active"; // Active, Draft, Sold, Pending, Rejected
+        public string Status { get; set; } = "Active"; // Active, Draft, Sold, Pending, Rejected, Deleted
         public bool IsFeatured { get; set; } = false;
         public DateTime LastBoostedAt { get; set; } = DateTime.UtcNow;
+        public DateTime? DeletedAt { get; set; }
 
         // Foreign Keys & Navigation
         public Guid UserId { get; set; }
