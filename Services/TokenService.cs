@@ -81,7 +81,10 @@ namespace olx_api.Services
 
         private int GetAccessTokenMinutes()
         {
-            return int.TryParse(_configuration["Jwt:AccessTokenMinutes"], out var minutes)
+            var configuredMinutes = Environment.GetEnvironmentVariable("JWT_ACCESS_TOKEN_MINUTES")
+                ?? _configuration["Jwt:AccessTokenMinutes"];
+
+            return int.TryParse(configuredMinutes, out var minutes)
                 ? minutes
                 : 30;
         }
