@@ -74,7 +74,7 @@ builder.Services.AddCors(options =>
     {
         var origins = (Environment.GetEnvironmentVariable("CORS_ORIGINS")
                        ?? builder.Configuration["Cors:Origins"]
-                       ?? "http://localhost:3000,http://localhost:19006")
+                       ?? "http://localhost:3000,http://localhost:4200,http://localhost:19006")
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         policy.WithOrigins(origins) // Web and React Native ports
