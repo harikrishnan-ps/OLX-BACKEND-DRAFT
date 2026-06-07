@@ -185,10 +185,10 @@ namespace olx_api.Controllers
             if (listing.UserId != userId.Value)
                 return Forbid();
 
-            if (string.Equals(dto.Status, "Active", StringComparison.OrdinalIgnoreCase) && (listing.Images == null || !listing.Images.Any()))
-            {
-                return BadRequest("A listing must have at least 1 image to be published (Active).");
-            }
+            // if (string.Equals(dto.Status, "Active", StringComparison.OrdinalIgnoreCase) && (listing.Images == null || !listing.Images.Any()))
+            // {
+            //     return BadRequest("A listing must have at least 1 image to be published (Active).");
+            // }
 
             var wasActive = string.Equals(listing.Status, "Active", StringComparison.OrdinalIgnoreCase);
             var isNowActive = string.Equals(dto.Status, "Active", StringComparison.OrdinalIgnoreCase);

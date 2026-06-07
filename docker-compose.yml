@@ -32,7 +32,7 @@ services:
       - DB_CONNECTION=Server=db;Port=3306;Database=olx_db;Uid=root;Pwd=rootpassword;
       - JWT_SECRET_KEY=SuperSecretUltraLongSecurityKeyForOlxClone2026!
       - JWT_ACCESS_TOKEN_MINUTES=30
-      - CORS_ORIGINS=http://localhost:3000,http://localhost:19006
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:19006,http://localhost:4200,http://localhost
       - AUTO_APPLY_MIGRATIONS=true
       - ADMIN_EMAIL=admin@olxclone.local
       - ADMIN_PASSWORD=Admin@12345
@@ -41,6 +41,18 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
+  frontend:
+    image: olx-frontend
+    build:
+      context: ../olx-clone
+      dockerfile: Dockerfile
+    container_name: olx-angular-frontend
+    restart: always
+    ports:
+      - "4200:80"
+    depends_on:
+      - backend
 
 volumes:
   mysql-data:

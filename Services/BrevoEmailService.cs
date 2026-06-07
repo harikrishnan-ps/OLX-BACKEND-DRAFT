@@ -19,13 +19,14 @@ namespace olx_api.Services
 
         public async Task SendPasswordResetOtpAsync(string email, string fullName, string otp)
         {
-            var apiKey = Environment.GetEnvironmentVariable("BREVO_API_KEY") ?? _configuration["Brevo:ApiKey"];
-            var senderEmail = Environment.GetEnvironmentVariable("BREVO_SENDER_EMAIL") ?? _configuration["Brevo:SenderEmail"];
-            var senderName = Environment.GetEnvironmentVariable("BREVO_SENDER_NAME") ?? _configuration["Brevo:SenderName"] ?? "OLX Clone";
+            var apiKey = (Environment.GetEnvironmentVariable("BREVO_API_KEY") ?? _configuration["Brevo:ApiKey"])?.Trim('"', '\'');
+            var senderEmail = (Environment.GetEnvironmentVariable("BREVO_SENDER_EMAIL") ?? _configuration["Brevo:SenderEmail"])?.Trim('"', '\'');
+            var senderName = (Environment.GetEnvironmentVariable("BREVO_SENDER_NAME") ?? _configuration["Brevo:SenderName"] ?? "OLX Clone")?.Trim('"', '\'');
+
+            _logger.LogInformation("Password reset OTP for {Email}: {Otp}", email, otp);
 
             if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(senderEmail))
             {
-                _logger.LogInformation("Password reset OTP for {Email}: {Otp}", email, otp);
                 return;
             }
 
@@ -52,13 +53,14 @@ namespace olx_api.Services
 
         public async Task SendRegistrationOtpAsync(string email, string fullName, string otp)
         {
-            var apiKey = Environment.GetEnvironmentVariable("BREVO_API_KEY") ?? _configuration["Brevo:ApiKey"];
-            var senderEmail = Environment.GetEnvironmentVariable("BREVO_SENDER_EMAIL") ?? _configuration["Brevo:SenderEmail"];
-            var senderName = Environment.GetEnvironmentVariable("BREVO_SENDER_NAME") ?? _configuration["Brevo:SenderName"] ?? "OLX Clone";
+            var apiKey = (Environment.GetEnvironmentVariable("BREVO_API_KEY") ?? _configuration["Brevo:ApiKey"])?.Trim('"', '\'');
+            var senderEmail = (Environment.GetEnvironmentVariable("BREVO_SENDER_EMAIL") ?? _configuration["Brevo:SenderEmail"])?.Trim('"', '\'');
+            var senderName = (Environment.GetEnvironmentVariable("BREVO_SENDER_NAME") ?? _configuration["Brevo:SenderName"] ?? "OLX Clone")?.Trim('"', '\'');
+
+            _logger.LogInformation("Registration OTP for {Email}: {Otp}", email, otp);
 
             if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(senderEmail))
             {
-                _logger.LogInformation("Registration OTP for {Email}: {Otp}", email, otp);
                 return;
             }
 

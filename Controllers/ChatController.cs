@@ -151,6 +151,49 @@ namespace olx_api.Controllers
             return Ok(activeConversations);
         }
 
+        [HttpPost("messages")]
+        public async Task<ActionResult<MessageResponseDto>> SendMessage([FromBody] SendMessageDto dto)
+        {
+            var senderId = GetCurrentUserId();
+            if (senderId == null)
+                return Unauthorized();
+
+            var message = new Models.Message
+            {
+                SenderId = senderId.Value,
+                ReceiverId = dto.ReceiverId,
+                ListingId = dto.ListingId,
+                Content = dto.Content.Trim(),
+                SentAt = DateTime.UtcNow
+            };
+
+            await _context.Messages.AddAsync(message);
+
+            var senderUser = await _context.Users.FindAsync(senderId.Value);
+            var senderName = senderUser?.FullName ?? "A user";
+
+            var notification = new Models.InAppNotification
+            {
+                UserId = dto.ReceiverId,
+                Message = $"New message from {senderName}: {(dto.Content.Length > 30 ? dto.Content.Substring(0, 30) + "..." : dto.Content)}",
+                Type = "MessageReceived",
+                CreatedAt = DateTime.UtcNow
+            };
+            await _context.InAppNotifications.AddAsync(notification);
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new MessageResponseDto(
+                message.Id,
+                message.Content,
+                message.SentAt,
+                message.IsRead,
+                message.SenderId,
+                senderName,
+                message.ReceiverId
+            ));
+        }
+
         private Guid? GetCurrentUserId()
         {
             var value =
